@@ -85,5 +85,26 @@ router.put('/:korttiId/pinVaihto', function(req, res) {
   });
 });
 
-export default router;
+// PIN-koodin virheiden laskuri
+router.get('/:korttiId/virhelaskuri', function(req, res) {
+  kortti.getVirhelaskuri(req.params.korttiId, function(err, result) {
+    if (err) {
+      res.send(err);
+    } else {
+      res.json(result);
+    }
+  });
+});
 
+router.get('/:korttiId/virhelaskuri-ja-tila', function(req, res) {
+  kortti.getVirhelaskuriJaTila(req.params.korttiId, function(err, result) {
+    if (err) {
+      res.send(err);
+    } else {
+      res.json(result);
+    }
+  });
+});
+
+
+export default router;
