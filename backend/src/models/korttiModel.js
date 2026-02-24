@@ -119,6 +119,35 @@ const kortti = {
       return callback(err);
     }
   },
-};
+// Hae kortin virhelaskuri PinPool-taulusta
+getVirhelaskuri: async function(cardId, callback) {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      'SELECT kortti_id, virhelaskuri FROM PinPool WHERE kortti_id = ?',
+      [cardId]
+    );
+    return callback(null, rows);
+  } catch (err) {
+    return callback(err);
+  }
+},
+// Hae virhelaskuri + kortin tila
+getVirhelaskuriJaTila: async function(cardId, callback) {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      `SELECT p.kortti_id, p.virhelaskuri, k.tila
+       FROM PinPool p
+       JOIN Kortti k ON p.kortti_id = k.kortti_id
+       WHERE p.kortti_id = ?`,
+      [cardId]
+    );
 
+    return callback(null, rows);
+  } catch (err) {
+    return callback(err);
+  }
+},
+};
 export default kortti;

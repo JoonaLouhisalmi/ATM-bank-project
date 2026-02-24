@@ -6,15 +6,12 @@ const router = express.Router();
 
 router.post('/verify-pin', function (request, response) {
 
-    //päivitetty const -> let ja trimmataan mahdolliset välilyönnit pois -jani
     let { kortti_numero, pin } = request.body;
-    // Siivotaan tyhjät välit pois varmuuden vuoksi
     if (kortti_numero) kortti_numero = kortti_numero.trim();
     if (pin) pin = pin.trim();
 
-    //lisätty logitusta debuggausta varten 260208 -jani
     console.log("--- DEBUG START ---");
-    console.log(`Saatu korttinumero: '${kortti_numero}'`); // Huom: heittomerkit paljastavat välilyönnit!
+    console.log(`Saatu korttinumero: '${kortti_numero}'`);
     console.log(`Pituus: ${kortti_numero ? kortti_numero.length : 0}`);
     console.log(`Saatu PIN: '${pin}'`);
     console.log("--- DEBUG END ---");
@@ -26,7 +23,6 @@ router.post('/verify-pin', function (request, response) {
         });
     }
 
-    // hae kortti
     auth.getKorttiByNumero(kortti_numero, function (err, korttiResult) {
 
         if (err) {
@@ -42,7 +38,6 @@ router.post('/verify-pin', function (request, response) {
 
         const kortti = korttiResult[0];
 
-        // tarkista kortin tila
         if (kortti.tila !== 'ACTIVE') {
             return response.json({
                 success: false,
@@ -50,7 +45,6 @@ router.post('/verify-pin', function (request, response) {
             });
         }
 
-        // hae PIN-yritystiedot
         auth.getPinYrityys(kortti.kortti_id, function (err, pinResult) {
 
             if (err) {
@@ -66,7 +60,6 @@ router.post('/verify-pin', function (request, response) {
 
             const pinYritys = pinResult[0];
 
-            // tarkista aikaperusteinen lukitus
             if (pinYritys.lukossa_asti && new Date(pinYritys.lukossa_asti) > new Date()) {
                 return response.json({
                     success: false,
@@ -74,27 +67,29 @@ router.post('/verify-pin', function (request, response) {
                 });
             }
 
-            // vertaa PIN
             auth.verifyPin(pin, kortti.pin_bcrypt, function (err, isMatch) {
 
                 if (err) {
                     return response.json(err);
                 }
 
-                // väärä PIN
                 if (!isMatch) {
 
                     auth.incrementPinError(kortti.kortti_id, function () {
 
                         if (pinYritys.virhelaskuri + 1 >= 3) {
 
-                            auth.lockPinYrityys(kortti.kortti_id, function () {
-                                auth.lockCard(kortti.kortti_id, function () {
-                                    return response.json({
-                                        success: false,
-                                        message: 'Kortti lukittu liian monen virheellisen PIN-yrityksen vuoksi'
+                            auth.resetPinError(kortti.kortti_id, function () {
+
+                                auth.lockPinYrityys(kortti.kortti_id, function () {
+                                    auth.lockCard(kortti.kortti_id, function () {
+                                        return response.json({
+                                            success: false,
+                                            message: 'Kortti lukittu liian monen virheellisen PIN-yrityksen vuoksi'
+                                        });
                                     });
                                 });
+
                             });
 
                         } else {
@@ -106,63 +101,60 @@ router.post('/verify-pin', function (request, response) {
                         }
                     });
 
-                } 
-                // oikea PIN
-                else {
+                } else {
+
                     auth.resetPinError(kortti.kortti_id, function () {
 
-                        auth.getAsiakasByKorttiId(kortti.kortti_id, function(err, asiakasRows) {
+                        auth.getAsiakasByKorttiId(kortti.kortti_id, function (err, asiakasRows) {
                             if (err || asiakasRows.length === 0) {
-                                 return response.json({ success: false, message: 'Asiakastietoja ei löydy' });
-                            } 
-                            
+                                return response.json({ success: false, message: 'Asiakastietoja ei löydy' });
+                            }
+
                             const asiakas = asiakasRows[0];
 
-                        auth.getKorttiTilit(kortti.kortti_id, function (err, tiliRows) {
-                            if (err) {
-                                console.error('getKorttiTilit virhe:', err);
-                                return response.json({ success: false, message: 'Tietokantavirhe' });
-                            }
+                            auth.getKorttiTilit(kortti.kortti_id, function (err, tiliRows) {
+                                if (err) {
+                                    console.error('getKorttiTilit virhe:', err);
+                                    return response.json({ success: false, message: 'Tietokantavirhe' });
+                                }
 
-                            if (!tiliRows || tiliRows.length === 0) {
-                                return response.json({
-                                    success: false,
-                                    message: 'Kortille ei ole liitetty yhtään aktiivista tiliä'
+                                if (!tiliRows || tiliRows.length === 0) {
+                                    return response.json({
+                                        success: false,
+                                        message: 'Kortille ei ole liitetty yhtään aktiivista tiliä'
+                                    });
+                                }
+
+                                const roles = tiliRows.map(r => r.rooli);
+                                let cardType = 'UNKNOWN';
+                                if (roles.includes('DEBIT') && roles.includes('CREDIT')) {
+                                    cardType = 'COMBO';
+                                } else if (roles.includes('DEBIT')) {
+                                    cardType = 'DEBIT';
+                                } else if (roles.includes('CREDIT')) {
+                                    cardType = 'CREDIT';
+                                }
+
+                                const token = generateAccessToken(kortti.kortti_id);
+
+                                const tilit = tiliRows.map(row => ({
+                                    tili_id: row.tili_id,
+                                    rooli: row.rooli,
+                                }));
+
+                                response.json({
+                                    success: true,
+                                    message: 'PIN oikein',
+                                    kortti_id: kortti.kortti_id,
+                                    token: token,
+                                    cardType: cardType,
+                                    tilit: tilit,
+                                    kuva: asiakas.kuva
                                 });
-                            }
 
-                            // Päätellään cardType roolien perusteella
-                            const roles = tiliRows.map(r => r.rooli);
-                            let cardType = 'UNKNOWN';
-                            if (roles.includes('DEBIT') && roles.includes('CREDIT')) {
-                                cardType = 'COMBO';
-                            } else if (roles.includes('DEBIT')) {
-                                cardType = 'DEBIT';
-                            } else if (roles.includes('CREDIT')) {
-                                cardType = 'CREDIT';
-                            }
-
-                            const token = generateAccessToken(kortti.kortti_id);
-
-                            // Muodostetaan frontendille sopiva tilit-lista
-                            const tilit = tiliRows.map(row => ({
-                                tili_id: row.tili_id,
-                                rooli: row.rooli,
-                            }));
-
-                            response.json({
-                                success: true,
-                                message: 'PIN oikein',
-                                kortti_id: kortti.kortti_id,
-                                token: token,
-                                cardType: cardType,
-                                tilit: tilit,  
-                                kuva: asiakas.kuva
-                            });
-
-                            // DEBUG-tulostus palvelimelle
-                            console.log(`Kirjautuminen onnistui kortti_id=${kortti.kortti_id}, cardType=${cardType}, tilit:`, tilit);
-                        })});
+                                console.log(`Kirjautuminen onnistui kortti_id=${kortti.kortti_id}, cardType=${cardType}, tilit:`, tilit);
+                            })
+                        });
                     });
                 }
             });
@@ -173,6 +165,5 @@ router.post('/verify-pin', function (request, response) {
 function generateAccessToken(kortti_id) {
     return jwt.sign({ kortti_id }, process.env.MY_TOKEN, { expiresIn: '18000s' });
 }
-
 
 export default router;
