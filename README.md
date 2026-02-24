@@ -137,7 +137,6 @@ backend/
 - **JWT** (jsonwebtoken 9.0.0) autentikointiin
 - **bcryptjs** (2.4.3) salasanojen hashaukseen
 - **Helmet** turvallisuusheadereille
-- **Morgan** lokitukseen
 
 
 ##  API-dokumentaatio
