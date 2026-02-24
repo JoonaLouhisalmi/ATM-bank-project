@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QPixmap>
 #include "config.h"
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -21,9 +22,14 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->BtnLogin, &QPushButton::clicked, this, &MainWindow::btnLoginSlot);
     manager = new QNetworkAccessManager(this);
 
-    // Connectaa IdleManager timeout tähän ikkunaan
     connect(IdleManager::instance(), &IdleManager::idleTimeout,
             this, &MainWindow::handleIdleTimeout);
+
+    errorTimer = new QTimer(this);
+    errorTimer->setSingleShot(true);
+    connect(errorTimer, &QTimer::timeout, this, [this]() {
+        ui->labelPinVaarin->setVisible(false);
+    });
 }
 
 MainWindow::~MainWindow()
@@ -53,14 +59,26 @@ void MainWindow::btnLoginSlot()
     connect(reply, &QNetworkReply::finished, this, &MainWindow::loginAction);
 }
 
+void MainWindow::showErrorBubble(const QString &msg)
+{
+    ui->labelPinVaarin->setText(msg);
+    ui->labelPinVaarin->setVisible(true);
+    errorTimer->start(3000);
+
+    connect(ui->textUsername, &QLineEdit::textEdited, this, [this]() {
+        ui->labelPinVaarin->setVisible(false);
+    });
+    connect(ui->textUserpassword, &QLineEdit::textEdited, this, [this]() {
+        ui->labelPinVaarin->setVisible(false);
+    });
+}
+
 void MainWindow::loginAction()
 {
     const QByteArray responseData = reply->readAll();
     DBG() << "Full login response JSON:" << responseData;
 
-
     if (reply->error() != QNetworkReply::NoError) {
-        //debug pitää poistaa myöhemmin
         DBG() << "verify-pin failed:" << reply->errorString();
         DBG() << "server response:" << responseData;
         reply->deleteLater();
@@ -71,7 +89,6 @@ void MainWindow::loginAction()
     QJsonParseError parseError{};
     const QJsonDocument doc = QJsonDocument::fromJson(responseData, &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-        //debug pitää poistaa myöhemmin
         DBG() << "verify-pin response   " << parseError.errorString();
         DBG() << "server response:" << responseData;
         reply->deleteLater();
@@ -81,6 +98,59 @@ void MainWindow::loginAction()
 
     const QJsonObject obj = doc.object();
 
+    {
+        const bool success = obj.value("success").toBool(false);
+        const QString message = obj.value("message").toString();
+        const int yrityksiaJaljella = obj.value("yrityksiä_jäljellä").toInt(-1);
+
+        if (!success) {
+
+            if (message.contains("kortti lukittu", Qt::CaseInsensitive)) {
+                showErrorBubble(message);
+                ui->textUserpassword->clear();
+                ui->textUserpassword->setFocus();
+                reply->deleteLater();
+                reply = nullptr;
+                return;
+            }
+
+            if (message.contains("väliaikaisesti lukittu", Qt::CaseInsensitive)) {
+                showErrorBubble(message);
+                ui->textUserpassword->clear();
+                ui->textUserpassword->setFocus();
+                reply->deleteLater();
+                reply = nullptr;
+                return;
+            }
+
+            if (message.contains("ei ole aktiivinen", Qt::CaseInsensitive)) {
+                showErrorBubble(message);
+                ui->textUserpassword->clear();
+                ui->textUserpassword->setFocus();
+                reply->deleteLater();
+                reply = nullptr;
+                return;
+            }
+
+            if (message.contains("Väärä PIN", Qt::CaseInsensitive)) {
+                QString teksti = message;
+                if (yrityksiaJaljella >= 0) {
+                    teksti += QString(" (%1)").arg(yrityksiaJaljella);
+                }
+                showErrorBubble(teksti);
+                ui->textUserpassword->clear();
+                ui->textUserpassword->setFocus();
+                reply->deleteLater();
+                reply = nullptr;
+                return;
+            }
+
+            showErrorBubble(message.isEmpty() ? "Tuntematon virhe" : message);
+            reply->deleteLater();
+            reply = nullptr;
+            return;
+        }
+    }
 
     const QString tokenString = obj.value("token").toString();
     const int serverKorttiId  = obj.value("kortti_id").toInt(0);
@@ -104,9 +174,7 @@ void MainWindow::loginAction()
     DBG() << "kortti_id:" << kortti_id;
     DBG() << "cardType:" << cardType;
 
-    // KÄYNNISTÄ IdleManager 30 sekunnin timeoutilla
     IdleManager::instance()->start(30000);
-
 
     int debitTiliId  = 0;
     int creditTiliId = 0;
@@ -125,7 +193,6 @@ void MainWindow::loginAction()
     bool useSelectionWindow = (cardType == "COMBO") || (debitTiliId > 0 && creditTiliId > 0);
 
     if (!useSelectionWindow) {
-        // Yksinkertainen kortti → suoraan oikeaan ikkunaan
 
         if (cardType == "DEBIT" && debitTiliId > 0) {
             DBG() << "DEBIT-kortti → suoraan DebitWindow";
@@ -145,7 +212,6 @@ void MainWindow::loginAction()
         }
         else {
             DBG() << "Ei debit- eikä credit-tiliä → virhe";
-
         }
     }
     else {
@@ -166,7 +232,6 @@ void MainWindow::loginAction()
                 this->hide();
             }
         });
-
 
         connect(w, &KortinValintaWindow::creditValittu, this, [this, creditTiliId]() {
             DBG() << "Credit valittu, käytetään tili_id:" << creditTiliId;
@@ -208,7 +273,6 @@ void MainWindow::handleLogoutSignal()
     resetLogin();
     this->show();
 
-    // Reconnectaa mainwindow idleTimeout handleri kun kirjautumisnäkymä näytetään
     connect(IdleManager::instance(), &IdleManager::idleTimeout,
             this, &MainWindow::handleIdleTimeout);
 }
@@ -222,9 +286,6 @@ void MainWindow::handleIdleTimeout()
 
     DBG() << "Idle timeout -> automaattinen logout";
 
-
-
-    // Sulje kaikki muut ikkunat paitsi MainWindow
     for (QWidget *w : QApplication::topLevelWidgets()) {
         if (w != this && w->isVisible()) {
             w->close();
@@ -236,5 +297,3 @@ void MainWindow::handleIdleTimeout()
 
     IdleManager::instance()->start(10000);
 }
-
-

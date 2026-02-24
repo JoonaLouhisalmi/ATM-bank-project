@@ -33,6 +33,8 @@ private:
     QNetworkReply *reply = nullptr;
     QByteArray webToken;
     QString asiakasKuva;
+    QTimer *errorTimer;   // aikakatkaisu virheilmoitukselle
+    void showErrorBubble(const QString &msg);  // näytä virhelabel
     int kortti_id;
     int debit_tili_id;
     int credit_tili_id;

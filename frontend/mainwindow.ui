@@ -162,6 +162,52 @@ border-color: rgb(255, 255, 0);</string>
      <string>TUNNUS</string>
     </property>
    </widget>
+   <widget class="QLabel" name="labelPinVaarin">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>370</x>
+      <y>180</y>
+      <width>291</width>
+      <height>71</height>
+     </rect>
+    </property>
+    <property name="cursor">
+     <cursorShape>BlankCursor</cursorShape>
+    </property>
+    <property name="contextMenuPolicy">
+     <enum>Qt::ContextMenuPolicy::NoContextMenu</enum>
+    </property>
+    <property name="visible">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgba(200, 20, 20, 180);
+         color: white;
+         border-radius: 6px;
+         padding: 4px;
+         font: bold 14pt &quot;Segoe UI&quot;;
+         qproperty-alignment: AlignCenter;
+</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="textFormat">
+     <enum>Qt::TextFormat::PlainText</enum>
+    </property>
+    <property name="textInteractionFlags">
+     <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+    </property>
+   </widget>
+   <zorder>labelPinVaarin</zorder>
+   <zorder>labelSalasana</zorder>
+   <zorder>textUsername</zorder>
+   <zorder>textUserpassword</zorder>
+   <zorder>BtnLogin</zorder>
+   <zorder>labelTunnus</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
@@ -169,7 +215,7 @@ border-color: rgb(255, 255, 0);</string>
      <x>0</x>
      <y>0</y>
      <width>1055</width>
-     <height>17</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>

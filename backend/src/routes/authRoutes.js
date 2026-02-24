@@ -95,7 +95,7 @@ router.post('/verify-pin', function (request, response) {
                         } else {
                             return response.json({
                                 success: false,
-                                message: 'Väärä PIN',
+                                message: 'PIN väärin',
                                 yrityksiä_jäljellä: 3 - (pinYritys.virhelaskuri + 1)
                             });
                         }
